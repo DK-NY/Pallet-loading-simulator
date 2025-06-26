@@ -1,0 +1,1550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargo Loading Simulator 3D</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls for camera interaction -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <!-- FontLoader for 3D text -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FontLoader.js"></script>
+    <!-- TextGeometry for 3D text -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/geometries/TextGeometry.js"></script>
+
+
+    <style>
+        /* Custom styles for the simulator */
+        body {
+            font-family: "Inter", sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to start to allow scrolling if content overflows */
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column; /* Stack items vertically on smaller screens */
+            gap: 20px;
+            max-width: 1200px;
+            width: 100%;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+        @media (min-width: 1024px) {
+            .container {
+                flex-direction: row; /* Side-by-side on larger screens */
+                justify-content: space-between;
+                align-items: flex-start;
+            }
+        }
+        .controls, .views {
+            flex: 1;
+            padding: 20px;
+            border-radius: 10px;
+            background-color: #fdfdfd;
+            box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.05);
+        }
+        .controls {
+            max-width: 400px; /* Limit width of controls */
+        }
+        .views {
+            display: flex;
+            flex-direction: column;
+            gap: 40px; /* Increased gap for better separation */
+            flex-grow: 2; /* Views take more space */
+        }
+        #main3DCanvas {
+            border: 2px solid #3b82f6; /* Blue border for canvases */
+            background-color: #ffffff; /* Changed to white */
+            border-radius: 8px;
+            width: 100%; /* Make canvases responsive */
+            height: 500px; /* Increased height for 3D view */
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+            cursor: grab; /* Indicate it's draggable for camera */
+            touch-action: none; /* Disable default touch actions */
+        }
+        .draggable-pallet {
+            position: absolute; /* Essential for drag and drop within a positioned parent */
+            background-color: rgba(255, 99, 71, 0.7); /* Tomato red with transparency */
+            border: 1px solid tomato;
+            cursor: grab;
+            display: flex;
+            flex-direction: column; /* To stack text and Z-info */
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: white;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            transition: background-color 0.2s;
+            user-select: none; /* Prevent text selection on draggable elements */
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            white-space: nowrap; /* Prevent text wrapping inside small pallets */
+            overflow: hidden; /* Hide overflow text */
+            text-overflow: ellipsis; /* Add ellipsis if text overflows */
+            padding: 2px; /* Small padding for text inside pallet */
+            box-sizing: border-box; /* Include padding in width/height calculation */
+        }
+        .draggable-pallet:hover {
+            background-color: rgba(255, 99, 71, 0.9);
+        }
+        .pallet-table-container {
+            max-height: 400px; /* Max height for scrollable table */
+            overflow-y: auto;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            background-color: white;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .pallet-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+        .pallet-table th, .pallet-table td {
+            padding: 8px 10px;
+            border: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        .pallet-table th {
+            background-color: #f9fafb;
+            font-weight: 600;
+            color: #4b5563;
+            position: sticky; /* Sticky header */
+            top: 0;
+            z-index: 10; /* Ensure header stays on top of scrolling content */
+        }
+        .pallet-table td input[type="text"],
+        .pallet-table td input[type="number"] {
+            width: 100%;
+            padding: 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+        .pallet-table td input[type="text"] {
+            min-width: 60px; /* Ensure name input isn't too small */
+        }
+        .pallet-table td input[type="number"] {
+            min-width: 40px; /* Ensure numeric inputs aren't too small */
+        }
+        .total-weight-box {
+            background-color: #dbeafe; /* Light blue */
+            border: 1px solid #93c5fd; /* Medium blue */
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 1.125rem;
+            font-weight: bold;
+            color: #1e40af; /* Dark blue */
+            margin-top: 20px;
+        }
+        .truck-canvas-container {
+            position: relative; /* Needed for absolutely positioned draggable pallets */
+            width: 100%;
+            min-height: 300px; /* Ensure container has a height for 2D interaction */
+            /* Prevent default browser actions like text selection on container */
+            user-select: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            overflow: hidden; /* Crucial to hide any elements pushed outside */
+            background-color: #e0f2fe; /* Match 3D canvas background */
+            border-radius: 8px;
+            border: 2px solid #3b82f6; /* Match 3D canvas border */
+        }
+        /* Style for editable pallet ID input and dimension inputs */
+        .rotate-icon {
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            background-color: rgba(0, 0, 0, 0.4);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1; /* Adjust line-height to center SVG */
+        }
+        .rotate-icon svg {
+            fill: white;
+            width: 14px;
+            height: 14px;
+        }
+        .pallet-z-info {
+            font-size: 0.65rem;
+            color: rgba(255, 255, 255, 0.8);
+            margin-top: 2px;
+        }
+
+        /* Styles for collapsible section */
+        .collapsible-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            padding: 10px;
+            background-color: #e0e7ff; /* Light blue background for header */
+            border-radius: 8px;
+            margin-bottom: 5px; /* Small margin after header */
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        .collapsible-header h3 {
+            margin: 0; /* Remove default margin from h3 */
+            color: #2563eb; /* Blue text color for header */
+        }
+        .collapsible-icon {
+            transition: transform 0.3s ease;
+        }
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease-out;
+            box-sizing: border-box; /* Include padding in transition */
+        }
+        .collapsible-content.expanded {
+            max-height: 300px; /* Adjust as needed, sufficiently large to show content */
+            padding: 15px; /* Add padding when expanded */
+        }
+        .collapsible-header.expanded .collapsible-icon {
+            transform: rotate(90deg); /* Rotate arrow when expanded */
+        }
+        .custom-dims-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        .custom-dims-table th, .custom-dims-table td {
+            padding: 5px;
+            border: 1px solid #e5e7eb;
+            text-align: center;
+        }
+        .custom-dims-table th {
+            background-color: #f9fafb;
+            font-weight: 600;
+            color: #4b5563;
+        }
+        .custom-dims-table input[type="number"] {
+            width: 100%;
+            padding: 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 0.85rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Controls Section -->
+        <div class="controls space-y-6">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Simulator Controls</h2>
+
+            <!-- Truck Selection -->
+            <div>
+                <label for="truckType" class="block text-sm font-medium text-gray-700 mb-2">Select Truck Size:</label>
+                <select id="truckType" class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm rounded-md shadow-sm">
+                    <option value="12ft">12ft Truck</option>
+                    <option value="20ft">20ft Truck</option>
+                    <option value="24ft">24ft Truck</option>
+                    <option value="26ft">26ft Truck</option>
+                    <option value="53ftDryVan">53ft Dry Van</option>
+                    <option value="53ftReefer">53ft Reefer</option>
+                    <option value="20GP">20GP Container</option>
+                    <option value="40GP">40GP Container</option>
+                    <option value="40HC">40HC Container</option>
+                    <option value="45HC">45HC Container</option>
+                </select>
+            </div>
+
+            <!-- Default Dimensions Display -->
+            <div class="border border-blue-200 bg-blue-50 p-4 rounded-md">
+                <h3 class="text-lg font-semibold text-gray-800 mb-2">Default Truck Dimensions:</h3>
+                <p id="defaultDimsDisplay" class="text-gray-700"></p>
+            </div>
+
+            <!-- Custom Truck Dimensions Section (Collapsible) -->
+            <div class="border border-gray-300 rounded-md">
+                <div id="collapsibleHeader" class="collapsible-header">
+                    <h3 class="text-lg font-semibold">Customize Truck Dimensions</h3>
+                    <svg class="collapsible-icon w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+                </div>
+                <div id="collapsibleContent" class="collapsible-content">
+                    <table class="custom-dims-table">
+                        <thead>
+                            <tr>
+                                <th>Length (in)</th>
+                                <th>Width (in)</th>
+                                <th>Height (in)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><input type="number" id="customLength" min="1"></td>
+                                <td><input type="number" id="customWidth" min="1"></td>
+                                <td><input type="number" id="customHeight" min="1"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    <div class="flex gap-2 mt-4">
+                        <button id="applyCustomDimsBtn" class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                            Apply Custom Dimensions
+                        </button>
+                        <button id="resetCustomDimsBtn" class="flex-1 bg-gray-400 hover:bg-gray-500 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                            Reset to Default
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pallet Data Table -->
+            <div>
+                <h3 class="text-lg font-semibold text-gray-800 mb-3">Pallet Inventory (<span id="palletCount">0</span>/30)</h3>
+                <div class="pallet-table-container">
+                    <table class="pallet-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Length (in)</th>
+                                <th>Width (in)</th>
+                                <th>Height (in)</th>
+                                <th>Weight (lbs)</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="palletTableBody">
+                            <!-- Pallet rows will be dynamically inserted here -->
+                        </tbody>
+                    </table>
+                </div>
+                <button id="addPalletRowBtn" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md shadow-md transition duration-200">
+                    Add New Pallet Row
+                </button>
+            </div>
+
+            <!-- Total Weight Calculation -->
+            <div class="total-weight-box">
+                Total Estimated Weight: <span id="totalWeight">0</span> lbs
+            </div>
+        </div>
+
+        <!-- Views Section -->
+        <div class="views">
+            <!-- 3D View -->
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">3D Cargo View</h2>
+                <p class="text-gray-600 text-sm mb-2">Click and drag to rotate the view. Scroll to zoom. Use the 2D plane below to drag and drop pallets.</p>
+                <canvas id="main3DCanvas"></canvas>
+            </div>
+
+            <!-- 2D Drag and Drop Plane (for pallet placement) -->
+            <div>
+                <h2 class="text-2xl font-bold text-gray-800 mb-4">2D Pallet Placement Plane</h2>
+                <p class="text-gray-600 text-sm mb-2">Drag and drop pallets here to position them on the truck bed.</p>
+                <div id="topDownCanvasContainer" class="truck-canvas-container">
+                    <!-- The 2D truck outline will be drawn here -->
+                    <canvas id="placementCanvas" style="position: absolute; top: 0; left: 0;"></canvas>
+                    <!-- Draggable HTML pallets will be appended here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Three.js Global Variables ---
+        let scene, camera, renderer, controls;
+        let truckMesh;
+        const palletMeshes = {}; // Store pallet meshes by pallet.id
+        const palletTextMeshes = {}; // Store pallet text meshes by pallet.id
+        let font; // Global variable to store the loaded font
+
+        // --- Simulator Global Variables ---
+        let currentSelectedTruckType = '12ft'; // Default truck type
+        let pallets = []; // Array to store pallet objects
+        let scaleFactor = 0.5; // Pixels per inch for 2D drawing and 3D scaling (e.g., 0.5px/inch or 0.5 units/inch)
+        let palletCounter = 0; // For unique pallet IDs starting from 1
+        const SNAP_THRESHOLD_PX = 8; // Pixels for snapping in 2D view (approx. 16 inches if scaleFactor is 0.5)
+        const STACK_SNAP_THRESHOLD_INCHES = 2; // Inches for vertical stacking snap
+
+        // Max iterations for stabilization loops
+        const MAX_ITERATIONS = 50; // Increased iterations for more robust stabilization
+
+        // Truck dimensions in inches (Length, Width, Height) - Internal usable dimensions
+        const truckDimensions = {
+            '12ft': { length: 144, width: 90, height: 78 },
+            '20ft': { length: 240, width: 90, height: 84 },
+            '24ft': { length: 288, width: 90, height: 84 },
+            '26ft': { length: 312, width: 96, height: 96 },
+            '53ftDryVan': { length: 630, width: 100, height: 110 },
+            '53ftReefer': { length: 618, width: 96, height: 100 },
+            '20GP': { length: 232, width: 92, height: 89 },
+            '40GP': { length: 475, width: 92, height: 89 },
+            '40HC': { length: 475, width: 92, height: 108 },
+            '45HC': { length: 532, width: 92, height: 108 }
+        };
+
+        let userCustomTruckDims = null; // Stores user-defined custom dimensions for the current truck type
+
+        // DOM elements
+        const truckTypeSelect = document.getElementById('truckType');
+        const defaultDimsDisplay = document.getElementById('defaultDimsDisplay');
+        const customLengthInput = document.getElementById('customLength');
+        const customWidthInput = document.getElementById('customWidth');
+        const customHeightInput = document.getElementById('customHeight');
+        const applyCustomDimsBtn = document.getElementById('applyCustomDimsBtn');
+        const resetCustomDimsBtn = document.getElementById('resetCustomDimsBtn');
+        const addPalletRowBtn = document.getElementById('addPalletRowBtn');
+        const palletTableBody = document.getElementById('palletTableBody');
+        const totalWeightSpan = document.getElementById('totalWeight');
+        const palletCountSpan = document.getElementById('palletCount');
+        const topDownCanvasContainer = document.getElementById('topDownCanvasContainer');
+        const placementCanvas = document.getElementById('placementCanvas');
+        let placementCtx;
+
+        // Collapsible elements
+        const collapsibleHeader = document.getElementById('collapsibleHeader');
+        const collapsibleContent = document.getElementById('collapsibleContent');
+
+
+        // Store truck's drawn pixel offsets for 2D placement (relative to placementCanvas)
+        let truck2DOffsetX = 0;
+        let truck2DOffsetY = 0;
+        let truck2DLengthPx = 0;
+        let truck2DWidthPx = 0;
+
+        // --- Helper Function to get active truck dimensions ---
+        // This function determines whether to use default dimensions or user-customized ones.
+        function getEffectiveTruckDimensions() {
+            return userCustomTruckDims || truckDimensions[currentSelectedTruckType];
+        }
+
+        // --- Initialization ---
+        function initApp() {
+            // Load font first, then initialize scene
+            const fontLoader = new THREE.FontLoader();
+            fontLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/fonts/helvetiker_regular.typeface.json', function (loadedFont) {
+                font = loadedFont;
+                init3DScene(); // Initialize 3D scene after font is loaded
+
+                // Initialize 2D placement canvas context
+                placementCtx = placementCanvas.getContext('2d');
+
+                // Set initial canvas dimensions based on container and scale
+                resizePlacementCanvas();
+                resize3DCanvas();
+
+                // Event Listeners
+                truckTypeSelect.addEventListener('change', (e) => {
+                    currentSelectedTruckType = e.target.value;
+                    // Clear existing pallets when truck type changes
+                    pallets = [];
+                    // Remove all draggable pallet divs
+                    topDownCanvasContainer.querySelectorAll('.draggable-pallet').forEach(div => div.remove());
+                    // Remove all 3D pallet meshes
+                    for (const id in palletMeshes) {
+                        if (palletMeshes[id]) {
+                            scene.remove(palletMeshes[id]);
+                            palletMeshes[id].geometry.dispose();
+                            palletMeshes[id].material.dispose();
+                        }
+                    }
+                    // Remove all 3D text meshes
+                    for (const id in palletTextMeshes) {
+                        if (palletTextMeshes[id]) {
+                            scene.remove(palletTextMeshes[id]);
+                            palletTextMeshes[id].geometry.dispose();
+                            palletTextMeshes[id].material.dispose();
+                        }
+                    }
+                    Object.keys(palletMeshes).forEach(key => delete palletMeshes[key]);
+                    Object.keys(palletTextMeshes).forEach(key => delete palletTextMeshes[key]);
+                    palletCounter = 0; // Reset pallet counter for new truck type
+
+                    userCustomTruckDims = null; // Reset custom dimensions
+                    updateDefaultDimensionsDisplay(); // Update display and input fields
+                    renderPalletTable(); // Update pallet table (should be empty)
+                    updateTotalWeight(); // Reset total weight
+
+                    // Recalculate placement canvas size and redraw truck outline
+                    resizePlacementCanvas();
+                    redrawAll(); // Redraw 3D scene based on new truck type and empty pallets
+                    // No need to call updateAllDraggablePalletDivs as pallets array is empty
+                });
+
+                applyCustomDimsBtn.addEventListener('click', applyCustomDimensions);
+                resetCustomDimsBtn.addEventListener('click', resetCustomDimensions);
+                addPalletRowBtn.addEventListener('click', addPalletRow);
+
+                // Collapsible header toggle
+                collapsibleHeader.addEventListener('click', () => {
+                    collapsibleContent.classList.toggle('expanded');
+                    collapsibleHeader.classList.toggle('expanded');
+                });
+
+                // Initial setup
+                updateDefaultDimensionsDisplay(); // Display initial default dimensions
+                redrawAll();
+                pallets.forEach(pallet => placePalletDiv(pallet));
+                renderPalletTable();
+
+                // Setup window resize listener
+                window.addEventListener('resize', () => {
+                    resizePlacementCanvas(); // Recalculate scaleFactor and canvas dimensions
+                    resize3DCanvas();
+                    redrawAll(); // Redraw everything with new scale factor
+                    updateAllDraggablePalletDivs(); // Ensure 2D pallet divs are resized and repositioned
+                });
+            }); // End of fontLoader.load
+        }
+
+        // --- Three.js Scene Setup ---
+        function init3DScene() {
+            const main3DCanvas = document.getElementById('main3DCanvas');
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff); // Changed to white
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, main3DCanvas.offsetWidth / main3DCanvas.offsetHeight, 0.1, 1000);
+            // Adjusted camera position for 300% zoom (3x original distance)
+            camera.position.set(900 * scaleFactor, 900 * scaleFactor, 1200 * scaleFactor);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ canvas: main3DCanvas, antialias: true });
+            renderer.setSize(main3DCanvas.offsetWidth, main3DCanvas.offsetHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true; // Enable shadows
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // for smoother rotation
+            controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false; // Prevents camera from going through the ground
+            controls.maxPolarAngle = Math.PI / 2; // Limit vertical rotation to prevent going below ground
+            controls.target.set(0, (getEffectiveTruckDimensions().height * scaleFactor) / 2, 0); // Focus on the center of the truck bed
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040); // Soft white light
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.75);
+            directionalLight.position.set(200 * scaleFactor, 300 * scaleFactor, 200 * scaleFactor);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.near = 0.5;
+            directionalLight.shadow.camera.far = 500;
+            scene.add(directionalLight);
+
+            // Animation loop
+            animate();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update(); // only required if controls.enableDamping is set to true
+            
+            // Make pallet names always face the camera (billboarding)
+            for (const id in palletTextMeshes) {
+                if (palletTextMeshes[id]) {
+                    palletTextMeshes[id].quaternion.copy(camera.quaternion);
+                }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 3D Drawing Functions ---
+        function drawTruck3D() {
+            // Remove existing truck mesh if any
+            if (truckMesh) {
+                scene.remove(truckMesh);
+                truckMesh.geometry.dispose();
+                truckMesh.material.dispose();
+            }
+
+            const currentTruck = getEffectiveTruckDimensions(); // Use effective dimensions
+            const length = currentTruck.length * scaleFactor;
+            const width = currentTruck.width * scaleFactor;
+            const height = currentTruck.height * scaleFactor;
+
+            const geometry = new THREE.BoxGeometry(length, height, width); // Length, Height, Width
+            const material = new THREE.MeshPhongMaterial({
+                color: 0xADD8E6, // Light blue for truck (similar to previous canvas background)
+                transparent: true,
+                opacity: 0.1, // Opacity changed to 0.1
+                side: THREE.DoubleSide
+            });
+
+            truckMesh = new THREE.Mesh(geometry, material);
+            // Position the truck so its bottom-left-back corner (0,0,0 inches) is at (0,0,0) in Three.js scene space.
+            // A BoxGeometry's origin is its center, so we need to offset it by half its dimensions.
+            truckMesh.position.set(length / 2, height / 2, width / 2);
+            truckMesh.receiveShadow = true; // Truck can receive shadows
+            scene.add(truckMesh);
+
+            // Update OrbitControls target to the center of the new truck
+            controls.target.set(length / 2, height / 2, width / 2);
+            controls.update();
+        }
+
+        function drawPallets3D() {
+            // Remove existing pallet meshes and text meshes from scene
+            for (const id in palletMeshes) {
+                if (palletMeshes[id]) {
+                    scene.remove(palletMeshes[id]);
+                    palletMeshes[id].geometry.dispose();
+                    palletMeshes[id].material.dispose();
+                }
+            }
+            for (const id in palletTextMeshes) {
+                if (palletTextMeshes[id]) {
+                    scene.remove(palletTextMeshes[id]);
+                    palletTextMeshes[id].geometry.dispose();
+                    palletTextMeshes[id].material.dispose();
+                }
+            }
+            // Clear the maps
+            Object.keys(palletMeshes).forEach(key => delete palletMeshes[key]);
+            Object.keys(palletTextMeshes).forEach(key => delete palletTextMeshes[key]);
+
+
+            pallets.forEach(pallet => {
+                const palletLength = pallet.length * scaleFactor;
+                const palletWidth = pallet.width * scaleFactor; // This is the Z dimension in 3D
+                const palletHeight = pallet.height * scaleFactor; // This is the Y dimension in 3D
+
+                // Pallet Mesh
+                const geometry = new THREE.BoxGeometry(palletLength, palletHeight, palletWidth);
+                const material = new THREE.MeshPhongMaterial({
+                    color: new THREE.Color(pallet.color),
+                    emissive: new THREE.Color(0x0a0a0a) // Increased emissive for better visibility
+                });
+                const mesh = new THREE.Mesh(geometry, material);
+
+                // Position calculation for pallet mesh:
+                // pallet.x (inches), pallet.y (inches) are from the top-left of the truck.
+                // pallet.z (inches) is height from truck floor.
+                // In Three.js, the truck's bottom-left-back corner is at (0,0,0) due to its position adjustment.
+                // So, the pallet's position in 3D (its center) relative to this (0,0,0) truck origin is:
+                const threeDX = (pallet.x * scaleFactor) + (palletLength / 2);
+                const threeDY = (pallet.z * scaleFactor) + (palletHeight / 2); // Use pallet.z for vertical position
+                const threeDZ = (pallet.y * scaleFactor) + (palletWidth / 2);
+
+
+                mesh.position.set(threeDX, threeDY, threeDZ);
+                mesh.castShadow = true;
+                mesh.receiveShadow = true;
+                scene.add(mesh);
+                palletMeshes[pallet.id] = mesh; // Store mesh for later updates/removal
+
+                // Pallet Name Text
+                if (font) {
+                    const textGeometry = new THREE.TextGeometry(pallet.name, {
+                        font: font,
+                        size: 15 * scaleFactor, // Adjust text size based on scaleFactor
+                        height: 2 * scaleFactor, // Depth of the text
+                        curveSegments: 12
+                    });
+                    // Center the geometry's pivot point
+                    textGeometry.computeBoundingBox(); // Needed before centering
+                    textGeometry.center();
+
+                    const textMaterial = new THREE.MeshBasicMaterial({
+                        color: 0x000000, // Black text
+                        depthTest: false, // Important for visibility through transparent objects
+                        depthWrite: false, // Important for visibility through transparent objects
+                        transparent: true // Explicitly set to true for depthTest/depthWrite to work as intended
+                    });
+                    const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+
+                    // Position text in the middle of the pallet's height
+                    textMesh.position.set(
+                        threeDX, // Pallet center X
+                        (pallet.z * scaleFactor) + (palletHeight / 2), // Pallet bottom + half pallet height
+                        threeDZ // Pallet center Z
+                    );
+                    // Initial rotation should be zero, as the animate loop will handle billboarding
+                    textMesh.rotation.set(0,0,0);
+
+                    scene.add(textMesh);
+                    palletTextMeshes[pallet.id] = textMesh;
+                }
+            });
+        }
+
+
+        // --- 2D Placement Canvas Functions (for truck outline only) ---
+        function resizePlacementCanvas() {
+            const currentTruck = getEffectiveTruckDimensions(); // Use effective dimensions
+            const containerWidth = topDownCanvasContainer.offsetWidth;
+            const requiredWidthInches = currentTruck.length;
+            const requiredHeightInches = currentTruck.width; // For top-down view (corresponds to width of truck)
+
+            // Calculate new scaleFactor to fit the new truck dimensions within the container
+            // We use 0.9 to give a bit of margin inside the container
+            const scaleX = (containerWidth * 0.9) / requiredWidthInches;
+            const scaleY = (topDownCanvasContainer.offsetHeight * 0.9) / requiredHeightInches;
+            scaleFactor = Math.min(scaleX, scaleY); // Use the smaller scale to ensure it fits both width and height
+
+            // Set canvas element's drawing surface dimensions based on new scaleFactor
+            // Add a fixed border margin to the canvas itself for drawing the truck outline
+            const borderMargin = 20;
+            placementCanvas.width = (requiredWidthInches * scaleFactor) + borderMargin;
+            placementCanvas.height = (requiredHeightInches * scaleFactor) + borderMargin;
+
+            // Calculate margins to center the canvas within its container
+            const centerX = (containerWidth - placementCanvas.width) / 2;
+            const centerY = (topDownCanvasContainer.offsetHeight - placementCanvas.height) / 2;
+            placementCanvas.style.marginLeft = `${centerX}px`;
+            placementCanvas.style.marginTop = `${centerY}px`;
+
+            // Update the stored truck 2D drawing dimensions and offsets relative to the placementCanvas
+            truck2DLengthPx = currentTruck.length * scaleFactor;
+            truck2DWidthPx = currentTruck.width * scaleFactor;
+            // These offsets are from the top-left of the 'placementCanvas' to the top-left of the 'truck drawing area'
+            truck2DOffsetX = (placementCanvas.width - truck2DLengthPx) / 2;
+            truck2DOffsetY = (placementCanvas.height - truck2DWidthPx) / 2;
+
+            console.log(`resizePlacementCanvas: truckType=${currentSelectedTruckType}, scaleFactor=${scaleFactor}, canvasWidth=${placementCanvas.width}, canvasHeight=${placementCanvas.height}`);
+        }
+
+
+        function drawTruck2DOutline() {
+            placementCtx.clearRect(0, 0, placementCanvas.width, placementCanvas.height);
+
+            placementCtx.strokeStyle = '#3b82f6'; // Blue for truck outline
+            placementCtx.lineWidth = 3;
+            placementCtx.lineJoin = 'round';
+            // Draw the truck outline using the stored offsets and dimensions
+            placementCtx.strokeRect(truck2DOffsetX, truck2DOffsetY, truck2DLengthPx, truck2DWidthPx);
+        }
+
+        // --- Resize 3D Canvas ---
+        function resize3DCanvas() {
+            const main3DCanvas = document.getElementById('main3DCanvas');
+            const parent = main3DCanvas.parentElement;
+            const width = parent.offsetWidth;
+            const height = 500; // Fixed height for 3D view
+
+            renderer.setSize(width, height);
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+        }
+
+        // --- Redraw All Views ---
+        function redrawAll() {
+            drawTruck3D(); // Redraw 3D truck
+            drawPallets3D(); // Redraw 3D pallets
+            drawTruck2DOutline(); // Redraw 2D placement canvas outline
+            updateAllDraggablePalletDivs(); // Ensure 2D divs are correctly positioned
+        }
+
+        // --- Pallet Management ---
+
+        // Generates a random color for a new pallet
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color = '#';
+            for (let i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        // Adds a new pallet row to the table and internal array
+        function addPalletRow() {
+            if (pallets.length >= 30) {
+                const messageBox = document.createElement('div');
+                messageBox.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background-color: #fff; padding: 20px; border-radius: 8px;
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 1000;
+                    text-align: center; font-family: 'Inter', sans-serif;
+                `;
+                messageBox.innerHTML = `
+                    <p class="text-lg font-bold text-red-600 mb-4">Warning!</p>
+                    <p class="text-gray-800">Maximum 30 pallets allowed!</p>
+                    <button class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md" onclick="this.parentElement.remove()">OK</button>
+                `;
+                document.body.appendChild(messageBox);
+                return;
+            }
+
+            palletCounter++;
+            const newPallet = {
+                id: `pallet-${Date.now()}`, // Unique internal ID
+                name: `P-${palletCounter}`, // User-facing editable name
+                length: 48,
+                width: 40,
+                height: 48,
+                weight: 500,
+                color: getRandomColor(),
+                x: 0, // Initial X position in truck's coordinate system (inches)
+                y: 0, // Initial Y position in truck's coordinate system (inches)
+                z: 0 // Initial Z position (height from floor) in inches
+            };
+            pallets.push(newPallet);
+
+            renderPalletTable(); // Re-render the entire table
+            updateTotalWeight();
+            redrawAll(); // Redraw 3D view with new pallet
+            placePalletDiv(newPallet); // Place the draggable 2D div
+        }
+
+        // Renders or updates the table of added pallets in the UI
+        function renderPalletTable() {
+            palletTableBody.innerHTML = ''; // Clear existing table rows
+            if (pallets.length === 0) {
+                const noPalletsRow = palletTableBody.insertRow();
+                const cell = noPalletsRow.insertCell();
+                cell.colSpan = 6;
+                cell.textContent = 'No pallets added yet. Click "Add New Pallet Row" to begin.';
+                cell.className = 'text-gray-500 italic py-4';
+            } else {
+                pallets.forEach(pallet => {
+                    const row = palletTableBody.insertRow();
+                    row.dataset.palletId = pallet.id;
+
+                    // Name Cell
+                    const nameCell = row.insertCell();
+                    const nameInput = document.createElement('input');
+                    nameInput.type = 'text';
+                    nameInput.value = pallet.name;
+                    nameInput.className = 'w-full px-2 py-1 border rounded';
+                    nameInput.addEventListener('change', (e) => {
+                        const changedPallet = pallets.find(p => p.id === pallet.id);
+                        if (changedPallet) {
+                            changedPallet.name = e.target.value;
+                            const draggableDiv = document.getElementById(`draggable-${changedPallet.id}`);
+                            if (draggableDiv) {
+                                draggableDiv.querySelector('.pallet-name-display').textContent = changedPallet.name;
+                            }
+                            // Update 3D text when name changes
+                            // Instead of deleting and re-drawing all, update specific text mesh
+                            if (palletTextMeshes[pallet.id]) {
+                                scene.remove(palletTextMeshes[pallet.id]);
+                                palletTextMeshes[pallet.id].geometry.dispose();
+                                palletTextMeshes[pallet.id].material.dispose();
+                                delete palletTextMeshes[pallet.id];
+                            }
+                            // Re-create text mesh for the changed pallet only
+                            const palletMesh = palletMeshes[pallet.id];
+                            if (palletMesh && font) {
+                                const textGeometry = new THREE.TextGeometry(changedPallet.name, {
+                                    font: font,
+                                    size: 15 * scaleFactor,
+                                    height: 2 * scaleFactor,
+                                    curveSegments: 12
+                                });
+                                textGeometry.computeBoundingBox();
+                                textGeometry.center();
+                                const textMaterial = new THREE.MeshBasicMaterial({
+                                    color: 0x000000,
+                                    depthTest: false,
+                                    depthWrite: false,
+                                    transparent: true
+                                });
+                                const textMesh = new THREE.Mesh(textGeometry, textMaterial);
+
+                                textMesh.position.set(
+                                    palletMesh.position.x,
+                                    (pallet.z * scaleFactor) + (pallet.height * scaleFactor / 2), // Position in the middle of the pallet's height
+                                    palletMesh.position.z
+                                );
+                                scene.add(textMesh);
+                                palletTextMeshes[pallet.id] = textMesh;
+                            }
+                        }
+                    });
+                    nameCell.appendChild(nameInput);
+
+                    // Dimensions and Weight Cells
+                    ['length', 'width', 'height', 'weight'].forEach(prop => {
+                        const cell = row.insertCell();
+                        const input = document.createElement('input');
+                        input.type = 'number';
+                        input.value = pallet[prop];
+                        input.min = '1';
+                        input.className = 'w-full px-2 py-1 border rounded';
+                        input.addEventListener('change', (e) => {
+                            const value = parseFloat(e.target.value);
+                            if (isNaN(value) || value <= 0) {
+                                const messageBox = document.createElement('div');
+                                messageBox.style.cssText = `
+                                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                                    background-color: #fff; padding: 20px; border-radius: 8px;
+                                    box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 1000;
+                                    text-align: center; font-family: 'Inter', sans-serif;
+                                `;
+                                messageBox.innerHTML = `
+                                    <p class="text-lg font-bold text-red-600 mb-4">Error!</p>
+                                    <p class="text-gray-800">Please enter a valid positive number for ${prop}.</p>
+                                    <button class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md" onclick="this.parentElement.remove()">OK</button>
+                                `;
+                                document.body.appendChild(messageBox);
+                                // Revert to old value if invalid
+                                e.target.value = pallet[prop];
+                                return;
+                            }
+                            pallet[prop] = value; // Update the pallet object directly
+
+                            const truckBounds = getEffectiveTruckDimensions(); // Use effective dimensions
+                            // Check if new dimensions make pallet too large for the truck
+                            if (pallet.length > truckBounds.length || pallet.width > truckBounds.width || pallet.height > truckBounds.height) {
+                                const messageBox = document.createElement('div');
+                                messageBox.style.cssText = `
+                                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                                    background-color: #fff; padding: 20px; border-radius: 8px;
+                                    box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 1000;
+                                    text-align: center; font-family: 'Inter', sans-serif;
+                                `;
+                                messageBox.innerHTML = `
+                                    <p class="text-lg font-bold text-yellow-600 mb-4">Warning!</p>
+                                    <p class="text-gray-800">New pallet dimension makes it larger than the selected truck's capacity. Reverting change.</p>
+                                    <button class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md" onclick="this.parentElement.remove()">OK</button>
+                                `;
+                                document.body.appendChild(messageBox);
+                                // Revert to old value
+                                e.target.value = pallet[prop];
+                                return;
+                            }
+
+                            // Recalculate position and stabilize
+                            stabilizePalletPosition(pallet);
+
+                            updateTotalWeight();
+                            redrawAll(); // Redraws 3D and 2D elements
+                        });
+                        cell.appendChild(input);
+                    });
+
+                    // Actions Cell (Remove Button)
+                    const actionsCell = row.insertCell();
+                    const removeButton = document.createElement('button');
+                    removeButton.className = 'text-red-500 hover:text-red-700 font-bold text-sm';
+                    removeButton.textContent = 'Remove';
+                    removeButton.addEventListener('click', () => removePallet(pallet.id));
+                    actionsCell.appendChild(removeButton);
+                });
+            }
+            palletCountSpan.textContent = pallets.length;
+        }
+
+
+        // Removes a pallet from the list and simulator
+        function removePallet(id) {
+            pallets = pallets.filter(pallet => pallet.id !== id);
+            // Remove the draggable 2D div from the container
+            const draggableDiv = document.getElementById(`draggable-${id}`);
+            if (draggableDiv) {
+                draggableDiv.remove();
+            }
+            // Remove the 3D mesh from the scene
+            if (palletMeshes[id]) {
+                scene.remove(palletMeshes[id]);
+                palletMeshes[id].geometry.dispose();
+                palletMeshes[id].material.dispose();
+                delete palletMeshes[id];
+            }
+            // Remove the 3D text mesh from the scene
+            if (palletTextMeshes[id]) {
+                scene.remove(palletTextMeshes[id]);
+                palletTextMeshes[id].geometry.dispose();
+                palletTextMeshes[id].material.dispose();
+                delete palletTextMeshes[id];
+            }
+
+
+            // After removing, re-evaluate stacking for all remaining pallets to fill gaps
+            recalculateAllPalletZs();
+
+            renderPalletTable(); // Re-render the table
+            updateTotalWeight();
+            redrawAll(); // Redraw 3D scene (will also update 2D outline)
+        }
+
+        // Recalculates Z for all pallets (useful after removal or truck change)
+        function recalculateAllPalletZs() {
+            const truckBounds = getEffectiveTruckDimensions(); // Use effective dimensions
+            // Process pallets in order of their current Z, then by X, Y to ensure stability
+            pallets.sort((a, b) => a.z - b.z || a.x - b.x || a.y - b.y);
+
+            pallets.forEach(pallet => {
+                // Reset Z before re-determining to allow finding new bases (this is crucial!)
+                pallet.z = 0;
+                stabilizePalletPosition(pallet); // Stabilize each pallet after potential z-reset
+            });
+            // Re-sort after recalculation for consistent ordering
+            pallets.sort((a, b) => a.z - b.z || a.x - b.x || a.y - b.y);
+        }
+
+        // Calculates and displays the total weight of all pallets
+        function updateTotalWeight() {
+            const total = pallets.reduce((sum, pallet) => sum + pallet.weight, 0);
+            totalWeightSpan.textContent = total.toFixed(2); // Two decimal places
+        }
+
+        // --- Collision Detection and Resolution (2D for placement logic) ---
+
+        // Checks if two pallets overlap in the 2D top-down view
+        function checkCollision(palletA, palletB) {
+            // Pallet positions are in inches
+            return palletA.x < palletB.x + palletB.length &&
+                   palletA.x + palletA.length > palletB.x &&
+                   palletA.y < palletB.y + palletB.width &&
+                   palletA.y + palletA.width > palletB.y;
+        }
+
+        // Resolves collision by pushing palletA out of palletB
+        function resolveCollision(palletA, palletB, truckBounds) {
+            const overlapX = Math.max(0, Math.min(palletA.x + palletA.length, palletB.x + palletB.length) - Math.max(palletA.x, palletB.x));
+            const overlapY = Math.max(0, Math.min(palletA.y + palletA.width, palletB.y + palletB.width) - Math.max(palletA.y, palletB.y));
+
+            if (overlapX <= 0 && overlapY <= 0) return; // No overlap or just touching
+
+            const separationEpsilon = 1.0; // Increased buffer to ensure full separation in inches
+
+            // Determine direction of push based on which side has minimum overlap
+            if (overlapX < overlapY) {
+                // Resolve along X-axis
+                if (palletA.x < palletB.x) { // A is to the left of B
+                    palletA.x -= (overlapX + separationEpsilon); // Push A left with a small buffer
+                } else { // A is to the right of B
+                    palletA.x += (overlapX + separationEpsilon); // Push A right with a small buffer
+                }
+            } else {
+                // Resolve along Y-axis
+                if (palletA.y < palletB.y) { // A is above B
+                    palletA.y -= (overlapY + separationEpsilon); // Push A up with a small buffer
+                } else { // A is below B
+                    palletA.y += (overlapY + separationEpsilon); // Push A down with a small buffer
+                }
+            }
+
+            // Clamp palletA to stay within truck boundaries after push
+            palletA.x = Math.max(0, Math.min(palletA.x, truckBounds.length - palletA.length));
+            palletA.y = Math.max(0, Math.min(palletA.y, truckBounds.width - palletA.width));
+        }
+
+        // --- Snap-to-Edge Logic ---
+        function applySnap(pallet, truckBounds) {
+            const snapThresholdInches = SNAP_THRESHOLD_PX / scaleFactor; // Convert pixel threshold to inches
+
+            // Snap to Truck Edges
+            // X-axis (Length)
+            if (Math.abs(pallet.x - 0) < snapThresholdInches) {
+                pallet.x = 0;
+            } else if (Math.abs((pallet.x + pallet.length) - truckBounds.length) < snapThresholdInches) {
+                pallet.x = truckBounds.length - pallet.length;
+            }
+            // Y-axis (Width)
+            if (Math.abs(pallet.y - 0) < snapThresholdInches) {
+                pallet.y = 0;
+            } else if (Math.abs((pallet.y + pallet.width) - truckBounds.width) < snapThresholdInches) {
+                pallet.y = truckBounds.width - pallet.width;
+            }
+
+            // Snap to Other Pallet Edges (horizontal only for now)
+            pallets.forEach(otherPallet => {
+                // Only snap if they are on effectively the same Z plane (using rounded Z for consistency)
+                if (pallet.id === otherPallet.id || Math.round(pallet.z) !== Math.round(otherPallet.z)) return;
+
+                // Snap X to other pallet X (left edge to left edge)
+                if (Math.abs(pallet.x - otherPallet.x) < snapThresholdInches) {
+                    pallet.x = otherPallet.x;
+                }
+                // Snap X to other pallet X + Length (left edge to right edge)
+                else if (Math.abs(pallet.x - (otherPallet.x + otherPallet.length)) < snapThresholdInches) {
+                    pallet.x = otherPallet.x + otherPallet.length;
+                }
+                // Snap X + Length to other pallet X (right edge to left edge)
+                else if (Math.abs((pallet.x + pallet.length) - otherPallet.x) < snapThresholdInches) {
+                    pallet.x = otherPallet.x - pallet.length;
+                }
+                // Snap X + Length to other pallet X + Length (right edge to right edge)
+                else if (Math.abs((pallet.x + pallet.length) - (otherPallet.x + otherPallet.length)) < snapThresholdInches) {
+                    pallet.x = otherPallet.x + otherPallet.length - pallet.length;
+                }
+
+                // Snap Y to other pallet Y (top edge to top edge)
+                if (Math.abs(pallet.y - otherPallet.y) < snapThresholdInches) {
+                    pallet.y = otherPallet.y;
+                }
+                // Snap Y to other pallet Y + Width (top edge to bottom edge)
+                else if (Math.abs(pallet.y - (otherPallet.y + otherPallet.width)) < snapThresholdInches) {
+                    pallet.y = otherPallet.y + otherPallet.width;
+                }
+                // Snap Y + Width to other pallet Y (bottom edge to top edge)
+                else if (Math.abs((pallet.y + pallet.width) - otherPallet.y) < snapThresholdInches) {
+                    pallet.y = otherPallet.y - pallet.width;
+                }
+                // Snap Y + Width to other pallet Y + Width (bottom edge to bottom edge)
+                else if (Math.abs((pallet.y + pallet.width) - (otherPallet.y + otherPallet.width)) < snapThresholdInches) {
+                    pallet.y = otherPallet.y + otherPallet.width - pallet.width;
+                }
+            });
+
+            // Re-clamp to truck boundaries after snapping, in case snapping pushed it out slightly
+            pallet.x = Math.max(0, Math.min(pallet.x, truckBounds.length - pallet.length));
+            pallet.y = Math.max(0, Math.min(pallet.y, truckBounds.width - pallet.width));
+        }
+
+        // --- Stacking Logic ---
+        function determineStackingZ(pallet, truckBounds) {
+            let potentialStackingZ = 0; // Default to the floor
+
+            const truckMaxHeight = truckBounds.height;
+
+            // Collect all pallets that this pallet could potentially stack on (horizontal overlap)
+            // This is crucial: check horizontal overlap regardless of Z, as we're *determining* Z.
+            const possibleBasePallets = pallets.filter(otherPallet =>
+                pallet.id !== otherPallet.id &&
+                checkCollision(pallet, otherPallet)
+            );
+
+            // Find the highest valid stacking point among horizontally overlapping pallets
+            for (const otherPallet of possibleBasePallets) {
+                const topOfOtherPallet = otherPallet.z + otherPallet.height;
+                // If placing the current pallet on top of 'otherPallet' does not exceed truck height
+                if ((topOfOtherPallet + pallet.height) <= truckMaxHeight) {
+                    potentialStackingZ = Math.max(potentialStackingZ, topOfOtherPallet);
+                }
+            }
+
+            // Always round the potential Z to the nearest whole number for consistency and to prevent floating point issues
+            pallet.z = Math.round(potentialStackingZ);
+
+            // Ensure the pallet doesn't go below zero or beyond truck height as a failsafe.
+            pallet.z = Math.max(0, Math.min(pallet.z, truckMaxHeight - pallet.height));
+        }
+
+        // --- Stabilization Logic for a single pallet ---
+        function stabilizePalletPosition(pallet) {
+            const truckBounds = getEffectiveTruckDimensions(); // Use effective dimensions
+            let positionChanged = true;
+            let iterationCount = 0;
+
+            while (positionChanged && iterationCount < MAX_ITERATIONS) {
+                positionChanged = false;
+                const oldX = pallet.x;
+                const oldY = pallet.y;
+                const oldZ = pallet.z;
+
+                // Apply horizontal snap
+                applySnap(pallet, truckBounds);
+                // Resolve horizontal collisions with *other* pallets on the same (rounded) Z level
+                for (let i = 0; i < pallets.length; i++) {
+                    const otherPallet = pallets[i];
+                    if (pallet.id !== otherPallet.id && Math.round(pallet.z) === Math.round(otherPallet.z) && checkCollision(pallet, otherPallet)) {
+                        resolveCollision(pallet, otherPallet, truckBounds);
+                    }
+                }
+                applySnap(pallet, truckBounds); // Re-snap after resolution
+
+                // After horizontal stabilization, determine the stacking Z.
+                determineStackingZ(pallet, truckBounds);
+
+                if (pallet.x !== oldX || pallet.y !== oldY || pallet.z !== oldZ) {
+                    positionChanged = true;
+                }
+                iterationCount++;
+            }
+        }
+
+
+        // --- Drag and Drop Logic for Pallet DIVs (2D for placement, updates 3D) ---
+        let currentDraggable = null;
+        let offsetX, offsetY; // Mouse/touch position relative to the draggable's top-left corner
+        let isDragging = false; // Flag to distinguish drag from click
+        let longPressTimeout; // Timeout for touch events
+
+        function placePalletDiv(pallet) {
+            const palletDiv = document.createElement('div');
+            palletDiv.id = `draggable-${pallet.id}`;
+            palletDiv.className = 'draggable-pallet';
+
+            const nameDisplay = document.createElement('div');
+            nameDisplay.className = 'pallet-name-display';
+            nameDisplay.textContent = pallet.name;
+            palletDiv.appendChild(nameDisplay);
+
+            const zInfo = document.createElement('div');
+            zInfo.className = 'pallet-z-info';
+            zInfo.textContent = `Z: ${pallet.z.toFixed(0)}in`;
+            palletDiv.appendChild(zInfo);
+
+            palletDiv.style.width = `${pallet.length * scaleFactor}px`;
+            palletDiv.style.height = `${pallet.width * scaleFactor}px`;
+            palletDiv.style.backgroundColor = pallet.color;
+
+            // Calculate initial position relative to topDownCanvasContainer, adjusted for truck outline offset
+            const initialXpx = (pallet.x * scaleFactor) + truck2DOffsetX + (parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0);
+            const initialYpx = (pallet.y * scaleFactor) + truck2DOffsetY + (parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0);
+
+            palletDiv.style.left = `${initialXpx}px`;
+            palletDiv.style.top = `${initialYpx}px`;
+
+
+            palletDiv.setAttribute('draggable', 'true'); // Make it draggable
+            topDownCanvasContainer.appendChild(palletDiv);
+
+            // Add rotate icon
+            const rotateIcon = document.createElement('div');
+            rotateIcon.className = 'rotate-icon';
+            rotateIcon.innerHTML = `
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
+                </svg>
+            `;
+            rotateIcon.dataset.palletId = pallet.id; // Link icon to pallet
+            rotateIcon.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent drag event from firing on click
+                rotatePallet(e.currentTarget.dataset.palletId);
+            });
+            palletDiv.appendChild(rotateIcon);
+
+
+            // Mouse events
+            palletDiv.addEventListener('dragstart', (e) => {
+                currentDraggable = palletDiv;
+                isDragging = true;
+                offsetX = e.clientX - palletDiv.getBoundingClientRect().left;
+                offsetY = e.clientY - palletDiv.getBoundingClientRect().top;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', palletDiv.id); // Set data for the drag operation
+                palletDiv.style.opacity = '0.7'; // Visual feedback during drag
+            });
+
+            palletDiv.addEventListener('dragend', () => {
+                if (currentDraggable) {
+                    currentDraggable.style.opacity = '1';
+                }
+                currentDraggable = null;
+                isDragging = false;
+                redrawAll(); // Ensure 3D canvas is updated after potential position changes
+            });
+
+            // Touch events
+            palletDiv.addEventListener('touchstart', (e) => {
+                currentDraggable = palletDiv;
+                isDragging = false; // Reset for touch
+                const touch = e.touches[0];
+                offsetX = touch.clientX - palletDiv.getBoundingClientRect().left;
+                offsetY = touch.clientY - palletDiv.getBoundingClientRect().top;
+                palletDiv.style.opacity = '0.7';
+                // Use a timeout to determine if it's a drag or a tap
+                longPressTimeout = setTimeout(() => {
+                    isDragging = true; // It's a drag if touch held
+                }, 200); // 200ms threshold for drag start
+                e.preventDefault(); // Prevent scrolling
+            });
+
+            palletDiv.addEventListener('touchmove', (e) => {
+                clearTimeout(longPressTimeout); // Clear timeout on move, confirming it's a drag
+                isDragging = true;
+
+                if (!currentDraggable) return;
+                const touch = e.touches[0];
+                const containerRect = topDownCanvasContainer.getBoundingClientRect();
+
+                // Get current canvas drawing offsets within its container
+                const canvasLeftOffset = parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0;
+                const canvasTopOffset = parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0;
+
+                // Calculate truck boundaries in pixels relative to container's top-left
+                const truckStartXPx = canvasLeftOffset + truck2DOffsetX;
+                const truckStartYPx = canvasTopOffset + truck2DOffsetY;
+                const truckEndXPx = truckStartXPx + truck2DLengthPx;
+                const truckEndYPx = truckStartYPx + truck2DWidthPx;
+
+                // Calculate new position relative to container
+                let newXPx = touch.clientX - containerRect.left - offsetX;
+                let newYPx = touch.clientY - containerRect.top - offsetY;
+
+                // Clamp to truck boundaries in pixels
+                newXPx = Math.max(truckStartXPx, Math.min(newXPx, truckEndXPx - currentDraggable.offsetWidth));
+                newYPx = Math.max(truckStartYPx, Math.min(newYPx, truckEndYPx - currentDraggable.offsetHeight));
+
+
+                currentDraggable.style.left = `${newXPx}px`;
+                currentDraggable.style.top = `${newYPx}px`;
+                e.preventDefault(); // Prevent scrolling
+            });
+
+            palletDiv.addEventListener('touchend', (e) => {
+                clearTimeout(longPressTimeout); // Clear any pending long press timeout
+
+                if (!currentDraggable) return;
+
+                if (!isDragging) { // If it was a tap, not a drag, simulate a click for the rotate icon
+                    // Check if the touch ended on the rotate icon, and if so, trigger its logic
+                    const touch = e.changedTouches[0];
+                    const targetElement = document.elementFromPoint(touch.clientX, touch.clientY);
+                    if (targetElement && targetElement.closest('.rotate-icon')) {
+                        // If touch ended on rotate icon, let its click handler take over
+                        currentDraggable.style.opacity = '1';
+                        currentDraggable = null;
+                        return;
+                    }
+                }
+
+                const palletId = currentDraggable.id;
+                const palletIndex = pallets.findIndex(p => `draggable-${p.id}` === palletId);
+                if (palletIndex === -1) {
+                     currentDraggable.style.opacity = '1';
+                     currentDraggable = null;
+                     return;
+                }
+
+                const droppedPallet = pallets[palletIndex];
+                const truckBounds = getEffectiveTruckDimensions(); // Use effective dimensions
+
+                // Get current canvas drawing offsets within its container
+                const canvasLeftOffset = parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0;
+                const canvasTopOffset = parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0;
+
+                // Convert pallet div's final pixel position (relative to container) to inches (relative to truck origin)
+                let provisionalXInches = (currentDraggable.getBoundingClientRect().left - (topDownCanvasContainer.getBoundingClientRect().left + canvasLeftOffset + truck2DOffsetX)) / scaleFactor;
+                let provisionalYInches = (currentDraggable.getBoundingClientRect().top - (topDownCanvasContainer.getBoundingClientRect().top + canvasTopOffset + truck2DOffsetY)) / scaleFactor;
+
+                // Clamp provisional position to truck boundaries (horizontal).
+                provisionalXInches = Math.max(0, Math.min(provisionalXInches, truckBounds.length - droppedPallet.length));
+                provisionalYInches = Math.max(0, Math.min(provisionalYInches, truckBounds.width - droppedPallet.width));
+
+                // Temporarily update pallet's x,y to this clamped provisional position.
+                droppedPallet.x = provisionalXInches;
+                droppedPallet.y = provisionalYInches;
+
+                stabilizePalletPosition(droppedPallet); // Stabilize the dropped pallet
+
+                // Update the draggable div's style based on potentially adjusted pallet position
+                // Convert updated inches position back to pixels relative to container
+                currentDraggable.style.left = `${(droppedPallet.x * scaleFactor) + canvasLeftOffset + truck2DOffsetX}px`;
+                currentDraggable.style.top = `${(droppedPallet.y * scaleFactor) + canvasTopOffset + truck2DOffsetY}px`;
+                currentDraggable.querySelector('.pallet-z-info').textContent = `Z: ${droppedPallet.z.toFixed(0)}in`;
+
+
+                currentDraggable.style.opacity = '1';
+                currentDraggable = null;
+                isDragging = false; // Reset drag flag
+                redrawAll(); // Redraw 3D scene to reflect new position
+            });
+        }
+
+        // Function to rotate a pallet by 90 degrees
+        function rotatePallet(palletId) {
+            const palletIndex = pallets.findIndex(p => p.id === palletId);
+            if (palletIndex === -1) return;
+
+            const palletToRotate = pallets[palletIndex];
+            const originalLength = palletToRotate.length;
+            const originalWidth = palletToRotate.width;
+
+            // Swap length and width
+            palletToRotate.length = originalWidth;
+            palletToRotate.width = originalLength;
+
+            // Get truck bounds for clamping
+            const truckBounds = getEffectiveTruckDimensions(); // Use effective dimensions
+
+            // Ensure the rotated pallet stays within truck boundaries
+            palletToRotate.x = Math.max(0, Math.min(palletToRotate.x, truckBounds.length - palletToRotate.length));
+            palletToRotate.y = Math.max(0, Math.min(palletToRotate.y, truckBounds.width - palletToRotate.width));
+
+            stabilizePalletPosition(palletToRotate); // Stabilize the rotated pallet
+
+            // Update the draggable div's size and position immediately
+            const draggableDiv = document.getElementById(`draggable-${palletId}`);
+            if (draggableDiv) {
+                draggableDiv.style.width = `${palletToRotate.length * scaleFactor}px`;
+                draggableDiv.style.height = `${palletToRotate.width * scaleFactor}px`;
+                draggableDiv.querySelector('.pallet-z-info').textContent = `Z: ${palletToRotate.z.toFixed(0)}in`;
+
+                const canvasLeftOffset = parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0;
+                const canvasTopOffset = parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0;
+                draggableDiv.style.left = `${(palletToRotate.x * scaleFactor) + canvasLeftOffset + truck2DOffsetX}px`;
+                draggableDiv.style.top = `${(palletToRotate.y * scaleFactor) + canvasTopOffset + truck2DOffsetY}px`;
+            }
+
+            redrawAll(); // Redraw 3D view and update pallet list display
+        }
+
+
+        // Function to update all draggable pallet div positions/sizes (e.g., on truck type change or resize)
+        function updateAllDraggablePalletDivs() {
+            pallets.forEach(pallet => {
+                const draggableDiv = document.getElementById(`draggable-${pallet.id}`);
+                if (draggableDiv) {
+                    draggableDiv.style.width = `${pallet.length * scaleFactor}px`;
+                    draggableDiv.style.height = `${pallet.width * scaleFactor}px`;
+                    draggableDiv.querySelector('.pallet-z-info').textContent = `Z: ${pallet.z.toFixed(0)}in`;
+
+
+                    // Get current canvas drawing offsets within its container
+                    const canvasLeftOffset = parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0;
+                    const canvasTopOffset = parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0;
+
+                    // Position relative to container's top-left, adjusted for truck outline offset
+                    draggableDiv.style.left = `${(pallet.x * scaleFactor) + canvasLeftOffset + truck2DOffsetX}px`;
+                    draggableDiv.style.top = `${(pallet.y * scaleFactor) + canvasTopOffset + truck2DOffsetY}px`;
+                }
+            });
+        }
+
+        topDownCanvasContainer.addEventListener('dragover', (e) => {
+            e.preventDefault(); // Allow drop
+            e.dataTransfer.dropEffect = 'move';
+
+            // Visual feedback during drag: update the ghost pallet position
+            if (currentDraggable) {
+                const containerRect = topDownCanvasContainer.getBoundingClientRect();
+                 // Get current canvas drawing offsets within its container
+                const canvasLeftOffset = parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0;
+                const canvasTopOffset = parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0;
+
+                // Calculate truck boundaries in pixels relative to container's top-left
+                const truckStartXPx = canvasLeftOffset + truck2DOffsetX;
+                const truckStartYPx = canvasTopOffset + truck2DOffsetY;
+                const truckEndXPx = truckStartXPx + truck2DLengthPx;
+                const truckEndYPx = truckStartYPx + truck2DWidthPx;
+
+                // Calculate new position relative to container
+                let newXPx = e.clientX - containerRect.left - offsetX;
+                let newYPx = e.clientY - containerRect.top - offsetY;
+
+                // Clamp to truck boundaries in pixels
+                newXPx = Math.max(truckStartXPx, Math.min(newXPx, truckEndXPx - currentDraggable.offsetWidth));
+                newYPx = Math.max(truckStartYPx, Math.min(newYPx, truckEndYPx - currentDraggable.offsetHeight));
+
+                currentDraggable.style.left = `${newXPx}px`;
+                currentDraggable.style.top = `${newYPx}px`;
+            }
+        });
+
+        topDownCanvasContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            if (!currentDraggable) return;
+
+            const palletId = e.dataTransfer.getData('text/plain');
+            const droppedPalletDiv = document.getElementById(palletId);
+            if (!droppedPalletDiv) return;
+
+            const palletIndex = pallets.findIndex(p => `draggable-${p.id}` === palletId);
+            if (palletIndex === -1) {
+                 currentDraggable.style.opacity = '1';
+                 currentDraggable = null;
+                 return;
+            }
+
+            const droppedPallet = pallets[palletIndex];
+            const truckBounds = getEffectiveTruckDimensions(); // Use effective dimensions
+
+            // Get current canvas drawing offsets within its container
+            const canvasLeftOffset = parseFloat(placementCanvas.style.marginLeft.replace('px', '')) || 0;
+            const canvasTopOffset = parseFloat(placementCanvas.style.marginTop.replace('px', '')) || 0;
+
+            // Convert pallet div's final pixel position (relative to container) to inches (relative to truck origin)
+            let provisionalXInches = (currentDraggable.getBoundingClientRect().left - (topDownCanvasContainer.getBoundingClientRect().left + canvasLeftOffset + truck2DOffsetX)) / scaleFactor;
+            let provisionalYInches = (currentDraggable.getBoundingClientRect().top - (topDownCanvasContainer.getBoundingClientRect().top + canvasTopOffset + truck2DOffsetY)) / scaleFactor;
+
+            // Clamp provisional position to truck boundaries (horizontal).
+            provisionalXInches = Math.max(0, Math.min(provisionalXInches, truckBounds.length - droppedPallet.length));
+            provisionalYInches = Math.max(0, Math.min(provisionalYInches, truckBounds.width - droppedPallet.width));
+
+            // Temporarily update pallet's x,y to this clamped provisional position.
+            droppedPallet.x = provisionalXInches;
+            droppedPallet.y = provisionalYInches;
+
+            stabilizePalletPosition(droppedPallet); // Stabilize the dropped pallet
+
+            // Update the draggable div's style based on potentially adjusted pallet position
+            // Convert updated inches position back to pixels relative to container
+            currentDraggable.style.left = `${(droppedPallet.x * scaleFactor) + canvasLeftOffset + truck2DOffsetX}px`;
+            currentDraggable.style.top = `${(droppedPallet.y * scaleFactor) + canvasTopOffset + truck2DOffsetY}px`;
+            currentDraggable.querySelector('.pallet-z-info').textContent = `Z: ${droppedPallet.z.toFixed(0)}in`;
+
+
+            currentDraggable.style.opacity = '1';
+            currentDraggable = null;
+            isDragging = false; // Reset drag flag
+            redrawAll(); // Redraw 3D scene to reflect new position
+        });
+
+        // --- Custom Dimensions Logic ---
+        function updateDefaultDimensionsDisplay() {
+            const currentDims = truckDimensions[currentSelectedTruckType];
+            defaultDimsDisplay.textContent = `Length: ${currentDims.length} in, Width: ${currentDims.width} in, Height: ${currentDims.height} in`;
+
+            // Also update custom input fields with current effective dimensions for editing
+            const effectiveDims = getEffectiveTruckDimensions();
+            customLengthInput.value = effectiveDims.length;
+            customWidthInput.value = effectiveDims.width;
+            customHeightInput.value = effectiveDims.height;
+        }
+
+        function applyCustomDimensions() {
+            const newLength = parseFloat(customLengthInput.value);
+            const newWidth = parseFloat(customWidthInput.value);
+            const newHeight = parseFloat(customHeightInput.value);
+
+            if (isNaN(newLength) || newLength <= 0 ||
+                isNaN(newWidth) || newWidth <= 0 ||
+                isNaN(newHeight) || newHeight <= 0) {
+                const messageBox = document.createElement('div');
+                messageBox.style.cssText = `
+                    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                    background-color: #fff; padding: 20px; border-radius: 8px;
+                    box-shadow: 0 4px 10px rgba(0,0,0,0.2); z-index: 1000;
+                    text-align: center; font-family: 'Inter', sans-serif;
+                `;
+                messageBox.innerHTML = `
+                    <p class="text-lg font-bold text-red-600 mb-4">Error!</p>
+                    <p class="text-gray-800">Please enter valid positive numbers for all dimensions.</p>
+                    <button class="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md" onclick="this.parentElement.remove()">OK</button>
+                `;
+                document.body.appendChild(messageBox);
+                return;
+            }
+
+            userCustomTruckDims = {
+                length: newLength,
+                width: newWidth,
+                height: newHeight
+            };
+
+            // Recalculate all pallet positions based on new truck dimensions
+            recalculateAllPalletZs();
+            redrawAll();
+
+            // Inform user of custom dimensions
+            defaultDimsDisplay.textContent = `Length: ${newLength} in, Width: ${newWidth} in, Height: ${newHeight} in (Custom)`;
+        }
+
+        function resetCustomDimensions() {
+            userCustomTruckDims = null;
+            updateDefaultDimensionsDisplay(); // This will pull from truckDimensions and update inputs
+            recalculateAllPalletZs();
+            redrawAll();
+        }
+
+
+        // Initialize the application when the DOM is fully loaded
+        window.onload = initApp;
+
+    </script>
+</body>
+</html>
